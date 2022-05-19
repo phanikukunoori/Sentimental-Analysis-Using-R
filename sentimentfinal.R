@@ -1,0 +1,167 @@
+# Load
+library("magrittr") # needs to be run every time you start R and want to use %>%
+library("dplyr")
+library("tm")
+library("SnowballC")
+library("wordcloud")
+library("RColorBrewer")
+library("syuzhet")
+library("ggplot2")
+
+# Read the text file from local machine , choose file interactively
+Reviews <- read.csv("C:/Users/Phani/Downloads/tourist_accommodation_reviews.csv", header= TRUE)
+setwd("C:/Users/Phani/Downloads/Sentiment Analysis Data")
+reviewed <- Reviews %>% slice_sample(n=30)
+View(reviewed)
+reviewed <- reviewed["Review"]
+View(reviewed)
+#Saving the random sample file for SAS EM usage
+write.csv(reviewed,"C:/Users/Phani/Downloads/sentisample.csv", row.names = FALSE)
+
+# Load the data as a corpus
+reviewed_c <- Corpus(VectorSource(reviewed))
+
+#Replacing "/", "@" and "|" with space
+toSpace <- content_transformer(function (x , pattern ) gsub(pattern, " ", x))
+reviewed_c <- tm_map(reviewed_c, toSpace, "/")
+reviewed_c <- tm_map(reviewed_c, toSpace, "@")
+reviewed_c <- tm_map(reviewed_c, toSpace, "\\|")
+# Convert the text to lower case
+reviewed_c <- tm_map(reviewed_c, content_transformer(tolower))
+# Remove numbers
+reviewed_c <- tm_map(reviewed_c, removeNumbers)
+# Remove english common stopwords
+reviewed_c <- tm_map(reviewed_c, removeWords, stopwords("english"))
+# Remove your own stop word
+# specify your custom stopwords as a character vector
+reviewed_c <- tm_map(reviewed_c, removeWords, c("review", "restaurant")) 
+# Remove punctuations
+reviewed_c <- tm_map(reviewed_c, removePunctuation)
+# Eliminate extra white spaces
+reviewed_c <- tm_map(reviewed_c, stripWhitespace)
+# Text stemming - which reduces words to their root form
+reviewed_c <- tm_map(reviewed_c, stemDocument)  
+# Build a term-document matrix
+reviewed_c_dtm <- TermDocumentMatrix(reviewed_c)
+dtm_m <- as.matrix(reviewed_c_dtm)
+# Sort by descearing value of frequency
+dtm_v <- sort(rowSums(dtm_m),decreasing=TRUE)
+dtm_d <- data.frame(word = names(dtm_v),freq=dtm_v)
+# Display the top 5 most frequent words
+head(dtm_d, 5)
+#Plot the most frequent words
+barplot(dtm_d[1:5,]$freq, las = 2, names.arg = dtm_d[1:5,]$word,
+        col ="lightgreen", main ="Top 5 most frequent words",
+        ylab = "Word frequencies")
+#generate word cloud
+set.seed(1234)
+wordcloud(words = dtm_d$word, freq = dtm_d$freq, min.freq = 5,
+          max.words=100, random.order=FALSE, rot.per=0.40, 
+          colors=brewer.pal(8, "Dark2"))
+findAssocs(reviewed_c_dtm, terms = c("good","food","great"), corlimit = 0.25)			
+
+findAssocs(reviewed_c_dtm, terms = findFreqTerms(reviewed_c_dtm, lowfreq = 10), corlimit = 0.25)
+
+#regular sentiment score using get_sentiment() function 
+# please note that different methods may have different scales
+syuzhet_vector <- get_sentiment(Reviews, method="syuzhet")
+# see the first row of the vector
+head(syuzhet_vector)
+# see summary statistics of the vector
+summary(syuzhet_vector)
+# bing
+bing_vector <- get_sentiment(Reviews, method="bing")
+head(bing_vector)
+summary(bing_vector)
+#affin
+afinn_vector <- get_sentiment(Reviews, method="afinn")
+head(afinn_vector)
+summary(afinn_vector)
+#compare the first row of each vector using sign function
+rbind(
+  sign(head(syuzhet_vector)),
+  sign(head(bing_vector)),
+  sign(head(afinn_vector))
+)
+# run nrc sentiment analysis to return data frame with each row classified as one of the following
+# emotions, rather than a score: 
+# anger, anticipation, disgust, fear, joy, sadness, surprise, trust 
+# It also counts the number of positive and negative emotions found in each row
+Reviews <- as.character(Reviews)
+d<-get_nrc_sentiment(Reviews)
+# head(d,10) - to see top 10 lines of the get_nrc_sentiment dataframe
+head (d,10)
+td<-data.frame(t(d))
+#The function rowSums computes column sums across rows for each level of a grouping variable.
+td_new <- data.frame(rowSums(td[,]))
+#Transformation and cleaning
+names(td_new)[1] <- "count"
+td_new <- cbind("sentiment" = rownames(td_new), td_new)
+rownames(td_new) <- NULL
+td_new2<-td_new[1:8,]
+#Plot One - count of words associated with each sentiment
+quickplot(sentiment, data=td_new2, weight=count, geom="bar", fill=sentiment, ylab="count")+ggtitle("Survey sentiments")
+ #Plot two - count of words associated with each sentiment, expressed as a percentage
+barplot(
+  sort(colSums(prop.table(d[, 1:8]))), 
+  horiz = TRUE, 
+  cex.names = 0.7, 
+  las = 1, 
+  main = "Emotions in Text", xlab="Percentage")
+
+install.packages("shinydashboard")
+library(shinydashboard)
+library(shiny)
+td_new4 <- as.data.frame(td_new2)
+td_new4
+dtm_d 
+#Sentiment_plot <- quickplot(sentiment, data=td_new2, weight=count, geom="bar", fill=sentiment, ylab="count")+ggtitle("Survey sentiments")
+#Sentiment_plot
+
+ui <- dashboardPage(
+  dashboardHeader(title = "Basic dashboard"),
+  dashboardSidebar(),
+  dashboardBody(
+    # Boxes need to be put in a row (or column)
+    fluidRow(
+      box(plotOutput("plot1", height = 250)),
+      
+      box(
+        title = "Controls",
+        sliderInput("slider", "Number of observations:", 1, 100, 50)
+      )
+    )
+  )
+)
+server <- function(input, output){
+  output$plot1 <- renderPlot(dtm_d[1:5,]$freq, las = 2, names.arg = dtm_d[1:5,]$word,
+                                              col ="lightgreen", main ="Top 5 most frequent words",
+                                              ylab = "Word frequencies")
+    }
+  
+
+Sentiment_plot2
+shinyApp(ui, server)
+
+
+
+library(shiny)
+library(shinydashboard)
+dtm_d
+
+ui <- dashboardPage(
+  dashboardHeader(title = "Sentimental Analysis"),
+  dashboardSidebar(),
+  dashboardBody(plotOutput("plot1"))
+  
+)
+
+server <- function(input, output) {
+  output$plot1 <- renderPlot(barplot(dtm_d[1:5,]$freq, las = 2, names.arg = dtm_d[1:5,]$word,
+                                     col ="lightgreen", main ="Top 5 most frequent words",
+                                     ylab = "Word frequencies"))
+  output$plot2 <- renderPlot(quickplot(sentiment, data=td_new2, weight=count, geom="bar", fill=sentiment, ylab="count")+ggtitle("Survey sentiments"))
+
+}
+
+shinyApp(ui, server)
